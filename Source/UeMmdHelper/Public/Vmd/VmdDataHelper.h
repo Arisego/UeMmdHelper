@@ -150,6 +150,7 @@ struct FVmdData
 public:
     void PrintOutData();
     const FVmdBoneTracks& GetTrackData() const {return TrackData;}
+    const FVmdHeader& GetVmdHeader() const {return VmdHeader;}
 
     friend FArchive& operator<<(FArchive& Ar, FVmdData& P)
     {

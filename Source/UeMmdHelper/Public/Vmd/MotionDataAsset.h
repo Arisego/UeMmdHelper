@@ -78,6 +78,9 @@ protected:
     UPROPERTY(EditAnywhere, Category="Default")
     FFilePath MotionPath;
 
+    UPROPERTY(VisibleAnywhere, Category="Default")
+    FString TargetModelName;
+
     /** Frame rate used in morph target animation pushing */
     UPROPERTY(EditAnywhere, Category="MorphAnim")
     float MorphAnimConvFrameRate = 30.0f;

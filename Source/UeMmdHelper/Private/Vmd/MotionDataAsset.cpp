@@ -21,6 +21,7 @@ void UMotionDataAsset::LoadFromVmdFile()
     FVmdDataHelper::LoadVmdDataFromFile(MotionPath.FilePath, TsVmdData);
     TsVmdData.PrintOutData();
 
+    TargetModelName = FVmdDataHelper::ConvertFromMmdName(TsVmdData.GetVmdHeader().TargetModelName);
 
     SlowTask.EnterProgressFrame(1.0f, LOCTEXT("CameraFrame", "Converting camera frame"));
     const FVmdBoneTracks& TsVmdTracks = TsVmdData.GetTrackData();
