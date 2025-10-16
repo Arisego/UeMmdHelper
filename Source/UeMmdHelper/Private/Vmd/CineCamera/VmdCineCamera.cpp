@@ -173,7 +173,7 @@ void AVmdCineCamera::SyncCameraMotion()
             ProjectionModeTrack->RemoveAllAnimationData();
         }
 
-        UEnum* TpProjectionEnum = FindObject<UEnum>(((UPackage*)-1), TEXT("ECameraProjectionMode"), true);
+        UEnum* TpProjectionEnum = FindObject<UEnum>(nullptr, TEXT("/Script/Engine.ECameraProjectionMode"), EFindObjectFlags::ExactClass);
         UE_LOG(LogMmdHelper, Log, TEXT("FCameraTrackHelper::ApplyCineCameraMotions: ProjectionMode, enum=%s"), *GetNameSafe(TpProjectionEnum));
         ProjectionModeTrack->SetEnum(TpProjectionEnum);
 
