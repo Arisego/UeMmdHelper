@@ -55,6 +55,20 @@ public:
     TArray<FVmdMorphFrameData> Frames;
 };
 
+USTRUCT(BlueprintType)
+struct FMorphMappingConfig
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(EditAnywhere)
+    FString MorphName;
+
+    /** Inverse the value, use the negative value */
+    UPROPERTY(EditAnywhere)
+    bool bUseNegative = false;
+};
+
 /**
  * Motion data asset in unreal
  * Stored necessary data and provide some helper functions
@@ -71,6 +85,9 @@ public:
     UFUNCTION(CallInEditor, Category = "MorphAnim")
     void PushMorphToAnimation();
 
+protected:
+    virtual void PreSave(FObjectPreSaveContext SaveContext) override;
+
 public:
     float GetMorphAnimConvFrameRate() const {return MorphAnimConvFrameRate; }
 
@@ -85,7 +102,7 @@ protected:
     UPROPERTY(EditAnywhere, Category="MorphAnim")
     float MorphAnimConvFrameRate = 30.0f;
 
-    /** Anim seqeunce to write morph target animation */
+    /** Anim sequence to write morph target animation */
     UPROPERTY(EditAnywhere, Category="MorphAnim")
     TObjectPtr<class UAnimSequence> TargetAnim;
 
@@ -100,17 +117,25 @@ protected:
     /**
      * Mapping of morph names
      * MMD original <--> Target mesh
+     * (Visible-only for back comparability, will auto be transformed to `MorphMapConfigs` while saving asset if it's empty)
+     */
+    UPROPERTY(VisibleAnywhere, Category = "MorphAnim|Mapping", meta = (EditCondition = bUseMorphMapping))
+    TMap<FString, FString> MorphNameMapping;
+
+    /**
+     * Mapping of morph names and detailed config
+     * MMD original <--> Target mesh
      */
     UPROPERTY(EditAnywhere, Category="MorphAnim|Mapping", meta = (EditCondition = bUseMorphMapping))
-    TMap<FString, FString> MorphNameMapping;
+    TMap<FString, FMorphMappingConfig> MorphMapConfigs;
 
 
 public:
-    /** Camera frame datas */
+    /** Camera frame data */
     UPROPERTY(VisibleAnywhere)
     TArray<FVmdCameraFrameData> CameraFrames;
 
-	/** Morph target track datas */
+    /** Morph target track data */
     UPROPERTY(VisibleAnywhere)
     TMap<FString, FVmdMorphTrackData> MorphTracks;
     
