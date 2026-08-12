@@ -14,7 +14,7 @@
 void UMotionDataAsset::LoadFromVmdFile()
 {
 #if WITH_EDITOR
-    FScopedSlowTask SlowTask(3.0f, LOCTEXT("LoadFromVmdFile", "Load motion data from file"));
+    FScopedSlowTask SlowTask(4.0f, LOCTEXT("LoadFromVmdFile", "Load motion data from file"));
     SlowTask.MakeDialog(false/*bShowCancelButton*/, true/*bAllowInPIE*/);
 
     SlowTask.EnterProgressFrame(1.0f, LOCTEXT("LoadData", "Serialize file data"));
@@ -120,6 +120,22 @@ void UMotionDataAsset::LoadFromVmdFile()
             *TrName,
             TrTrack.Frames.Num()
         );
+    }
+    
+    SlowTask.EnterProgressFrame(1.0f, LOCTEXT("BoneTracks", "Converting bone tracks"));
+    BoneTracks.Empty(0);
+    {
+        for (const FVmdBoneFrame& IterRawFrame : TsVmdTracks.BoneFrames)
+        {
+            const FString TstrName = FVmdDataHelper::ConvertFromMmdName(IterRawFrame.Name);
+
+            FVmdBoneTrackData& TrTrack = BoneTracks.FindOrAdd(TstrName);
+            FVmdBoneFrameData& TrAdded = TrTrack.Frames.AddZeroed_GetRef();
+
+            TrAdded.Frame = IterRawFrame.Frame;
+            TrAdded.BoneLocation = FVector(IterRawFrame.Position[0], IterRawFrame.Position[1], IterRawFrame.Position[2]);
+            TrAdded.BoneRotation = FQuat(IterRawFrame.Quaternion[0], IterRawFrame.Quaternion[1], IterRawFrame.Quaternion[2], IterRawFrame.Quaternion[3]);
+        }
     }
 
     Modify();

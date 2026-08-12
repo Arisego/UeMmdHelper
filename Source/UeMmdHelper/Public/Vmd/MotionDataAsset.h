@@ -56,6 +56,34 @@ public:
 };
 
 USTRUCT(BlueprintType)
+struct FVmdBoneFrameData
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(EditAnywhere)
+    uint32	Frame;
+
+    UPROPERTY(EditAnywhere)
+    FVector	BoneLocation;
+
+    UPROPERTY(EditAnywhere)
+    FQuat BoneRotation;
+
+    //uint8 Bezier[2][2][4];
+};
+
+USTRUCT(BlueprintType)
+struct FVmdBoneTrackData
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(EditAnywhere)
+    TArray<FVmdBoneFrameData> Frames;
+};
+
+USTRUCT(BlueprintType)
 struct FMorphMappingConfig
 {
     GENERATED_BODY()
@@ -138,5 +166,9 @@ public:
     /** Morph target track data */
     UPROPERTY(VisibleAnywhere)
     TMap<FString, FVmdMorphTrackData> MorphTracks;
+
+    /** Bone track data */
+    UPROPERTY(VisibleAnywhere)
+    TMap<FString, FVmdBoneTrackData> BoneTracks;
     
 };
