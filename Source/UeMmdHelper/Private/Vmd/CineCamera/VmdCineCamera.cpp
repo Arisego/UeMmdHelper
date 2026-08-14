@@ -47,6 +47,9 @@ void AVmdCineCamera::SyncCameraMotion()
     if (!IsValid(TpLevelSeq))
     {
         UE_LOG(LogMmdHelper, Warning, TEXT("FCameraTrackHelper::ApplyCineCameraMotions: Bad level sequencer"));
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("No Level Sequence", "Could not find active level sequence")
+        );
         return;
     }
 
@@ -54,6 +57,9 @@ void AVmdCineCamera::SyncCameraMotion()
     if (!IsValid(TpMovieScene))
     {
         UE_LOG(LogMmdHelper, Warning, TEXT("FCameraTrackHelper::ApplyCineCameraMotions: Bad GetMovieScene"));
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("No Movie Sequence", "Could not find movie sequence in level sequence")
+        );
         return;
     }
 
@@ -62,6 +68,9 @@ void AVmdCineCamera::SyncCameraMotion()
     if (!TpMotionData)
     {
         UE_LOG(LogMmdHelper, Warning, TEXT("FCameraTrackHelper::ApplyCineCameraMotions: Bad GetMotionData"));
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("No MotionData", "MotionData not found, please check the `MotionData` config")
+        );
         return;
     }
 
@@ -197,5 +206,25 @@ void AVmdCineCamera::SyncCameraMotion()
 #endif
 }
 
+
+void AVmdCineCamera::CopyCameraTrans()
+{
+    /** If config is ready, CopyCameraTrans is not supposed to be called */
+    if (bConfigReady)
+    {
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("Config not ready", "bConfigReady is true, could not modify")
+        );
+        UE_LOG(LogMmdHelper, Warning, TEXT("AVmdCineCamera::CopyCameraTrans: bConfigReady is true, no modify"));
+        return;
+    }
+
+    const FTransform& TsActorTrans = GetActorTransform();
+    UE_LOG(LogMmdHelper, Log, TEXT("AVmdCineCamera::CopyCameraTrans: CenterTrans modified, current=%s new=%s"),
+        *CenterTrans.ToString(),
+        *TsActorTrans.ToString()
+    );
+    CenterTrans = TsActorTrans;
+}
 
 #undef LOCTEXT_NAMESPACE

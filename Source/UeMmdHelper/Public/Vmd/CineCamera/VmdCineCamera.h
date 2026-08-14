@@ -26,6 +26,13 @@ protected:
     UFUNCTION(CallInEditor, Category="Sequencer")
     void SyncCameraMotion();
 
+    /**
+     * Copy camera actor trans to config.
+     * You must do it manually as camera actor may be moved by animation or some other logic.
+     */
+    UFUNCTION(CallInEditor, Category = "Sequencer")
+    void CopyCameraTrans();
+
 protected:
     UPROPERTY(EditAnywhere, Category="Sequencer")
     TObjectPtr<class UMotionDataAsset> MotionData;

@@ -143,6 +143,13 @@ void UMotionDataAsset::LoadFromVmdFile()
 }
 
 
+struct FPushMorphToAnimationRecord
+{
+    bool bSuccess = false;
+    bool bMapped = false;
+    uint32 FrameCount = 0;
+};
+
 void UMotionDataAsset::PushMorphToAnimation()
 {
 #if WITH_EDITOR
@@ -174,10 +181,14 @@ void UMotionDataAsset::PushMorphToAnimation()
     const float TfAnimLen = TpAnimSeq->GetPlayLength();
     const float TfAnimRate = GetMorphAnimConvFrameRate();
 
+    TMap<FString, FPushMorphToAnimationRecord> TsRecords;
+    uint32 CntPassed = 0;
     for (const TPair<FString, FVmdMorphTrackData>& IterMorphTrack : MorphTracks)
     {
         const FString& TrName = IterMorphTrack.Key;
         const FVmdMorphTrackData& TrTrack = IterMorphTrack.Value;
+
+        FPushMorphToAnimationRecord& TrRecord = TsRecords.FindOrAdd(TrName);
 
         FName TsMorphName = NAME_None;
         bool bNegativeValue = false;
@@ -194,6 +205,7 @@ void UMotionDataAsset::PushMorphToAnimation()
 
                 TsMorphName = *TrMappedName;
                 bNegativeValue = TpMorphMapConfig->bUseNegative;
+                TrRecord.bMapped = true;
             }
             else
             {
@@ -301,10 +313,41 @@ void UMotionDataAsset::PushMorphToAnimation()
         }
 
         TpAnimDataController.SetCurveKeys(MetadataCurveId, TsMorphRichCurve.GetConstRefOfKeys());
+
+        TrRecord.bSuccess = true;
+        TrRecord.FrameCount = TrTrack.Frames.Num();
+        ++CntPassed;
     }
 
     TpAnimDataController.NotifyPopulated();
     TpAnimDataController.CloseBracket();
+
+    ///Print records in log
+    {
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphToAnimation: Morph import summary, count=%u/%d"),
+            CntPassed,
+            TsRecords.Num()
+        );
+        for (const TPair<FString, FPushMorphToAnimationRecord>& Iter : TsRecords)
+        {
+            const FString& Name = Iter.Key;
+            const FPushMorphToAnimationRecord& R = Iter.Value;
+
+            if (R.bSuccess)
+            {
+                UE_LOG(LogMmdHelper, Log, TEXT("Passed, name=(%u)%s mapped=%d"), 
+                    R.FrameCount,
+                    *Name,
+                    R.bMapped ? 1 : 0
+                );
+            }
+            else
+            {
+                UE_LOG(LogMmdHelper, Warning, TEXT("Ignored, name=%s"), *Name);
+            }
+        }
+    }
+
     return;
 #endif
 }
