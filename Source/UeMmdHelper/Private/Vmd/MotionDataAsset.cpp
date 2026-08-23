@@ -146,7 +146,7 @@ void UMotionDataAsset::LoadFromVmdFile()
 struct FPushMorphToAnimationRecord
 {
     bool bSuccess = false;
-    bool bMapped = false;
+    uint32 CntMapped = 0;
     uint32 FrameCount = 0;
 };
 
@@ -188,24 +188,27 @@ void UMotionDataAsset::PushMorphToAnimation()
         const FString& TrName = IterMorphTrack.Key;
         const FVmdMorphTrackData& TrTrack = IterMorphTrack.Value;
 
+        TMap<FName, float> TsMorphModifyInfs;
         FPushMorphToAnimationRecord& TrRecord = TsRecords.FindOrAdd(TrName);
 
-        FName TsMorphName = NAME_None;
-        bool bNegativeValue = false;
         if (bUseMorphMapping)
         {
             const FMorphMappingConfig* TpMorphMapConfig = MorphMapConfigs.Find(TrName);
             if (TpMorphMapConfig)
             {
-                const FString& TrMappedName = TpMorphMapConfig->MorphName;
-                UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphToAnimation: Mapped, raw=%s name=%s"),
-                    *TrName,
-                    *TrMappedName
-                );
+                for(const FMorphMappingTarget& IterMorphTarget : TpMorphMapConfig->MorphTargets)
+                {
+                    const FName& TsTargetName = IterMorphTarget.MorphName;
+                    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphToAnimation: Mapped, raw=%s name=%s scale=%f"),
+                        *TrName,
+                        *TsTargetName.ToString(),
+                        IterMorphTarget.MorphScale
+                    );
 
-                TsMorphName = *TrMappedName;
-                bNegativeValue = TpMorphMapConfig->bUseNegative;
-                TrRecord.bMapped = true;
+                    TsMorphModifyInfs.FindOrAdd(TsTargetName) = IterMorphTarget.MorphScale;
+                    TrRecord.CntMapped++;
+                }
+
             }
             else
             {
@@ -220,104 +223,112 @@ void UMotionDataAsset::PushMorphToAnimation()
         }
         else 
         {
-            TsMorphName = *TrName;
+            TsMorphModifyInfs.FindOrAdd(*TrName) = 1.0f;
         }
 
-
-        /** Check morph target */
-        UMorphTarget* TpMorphTarget = TpSkelMesh->FindMorphTarget(TsMorphName);
-        if (!TpMorphTarget)
+        for (const TPair<FName, float>& IterMorphInf : TsMorphModifyInfs)
         {
-            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: No morph, name=%s"),
-                *TsMorphName.ToString()
-            );
-            continue;
-        }
+            const FName& TsMorphName = IterMorphInf.Key;
+            const float& TfMorphScale = IterMorphInf.Value;
 
-        /** Try create meta data */
-        FCurveMetaData* TpCurveMeta = TpSkeleton->GetCurveMetaData(TsMorphName);
-        if (!TpCurveMeta || !TpCurveMeta->Type.bMorphtarget)
-        {
-            TpSkeleton->AddCurveMetaData(TsMorphName);
-            UAnimCurveMetaData* TpCuremeataData = TpSkeleton->GetAssetUserData<UAnimCurveMetaData>();
-            if (!IsValid(TpCuremeataData))
+            /** Check morph target */
+            UMorphTarget* TpMorphTarget = TpSkelMesh->FindMorphTarget(TsMorphName);
+            if (!TpMorphTarget)
             {
-                UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: Bad curver meta data, name=%s"),
+                UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: No morph, name=%s"),
                     *TsMorphName.ToString()
                 );
                 continue;
             }
 
-            TpCurveMeta = TpCuremeataData->GetCurveMetaData(TsMorphName);
-            if (!TpCurveMeta)
+            /** Try create meta data */
+            FCurveMetaData* TpCurveMeta = TpSkeleton->GetCurveMetaData(TsMorphName);
+            if (!TpCurveMeta || !TpCurveMeta->Type.bMorphtarget)
             {
-                UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: Bad curver meta data create, name=%s"),
-                    *TsMorphName.ToString()
-                );
-                continue;
+                TpSkeleton->AddCurveMetaData(TsMorphName);
+                UAnimCurveMetaData* TpCuremeataData = TpSkeleton->GetAssetUserData<UAnimCurveMetaData>();
+                if (!IsValid(TpCuremeataData))
+                {
+                    UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: Bad curver meta data, name=%s"),
+                        *TsMorphName.ToString()
+                    );
+                    continue;
+                }
+
+                TpCurveMeta = TpCuremeataData->GetCurveMetaData(TsMorphName);
+                if (!TpCurveMeta)
+                {
+                    UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: Bad curver meta data create, name=%s"),
+                        *TsMorphName.ToString()
+                    );
+                    continue;
+                }
+
+                if (!TpCurveMeta->Type.bMorphtarget)
+                {
+                    TpCuremeataData->SetCurveMetaDataMorphTarget(TsMorphName, true);
+                    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphToAnimation: Auto created meta data, name=%s meta=(%p)%s"),
+                        *TsMorphName.ToString(),
+                        TpCuremeataData,
+                        *GetNameSafe(TpCuremeataData)
+                    );
+                }
+
+                TpSkeleton->Modify();
             }
 
-            if (!TpCurveMeta->Type.bMorphtarget)
+            /** Add curve */
+            const FAnimationCurveIdentifier MetadataCurveId(TsMorphName, ERawCurveTrackTypes::RCT_Float);
+            TpAnimDataController.AddCurve(MetadataCurveId, AACF_Metadata);
+
+            const FFloatCurve* TpNewCurve = TpAnimSeq->GetDataModel()->FindFloatCurve(MetadataCurveId);
+
+            /**
+             * This check ensures curve creation
+             * It's here to catch some unknown error, maybe remove it if every thing goes well
+             */
+            check(TpNewCurve && "Bad logic");
+
+            /** Add data to curve */
+            FRichCurve TsMorphRichCurve;
+            for (const FVmdMorphFrameData& IterFrame : TrTrack.Frames)
             {
-                TpCuremeataData->SetCurveMetaDataMorphTarget(TsMorphName, true);
-                UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphToAnimation: Auto created meta data, name=%s meta=(%p)%s"),
-                    *TsMorphName.ToString(),
-                    TpCuremeataData,
-                    *GetNameSafe(TpCuremeataData)
-                );
+                /** Convert frame time */
+                float TfTimeInCurve = IterFrame.Frame / TfAnimRate;
+                if (TfTimeInCurve > TfAnimLen)
+                {
+                    /**
+                     * Ignore if morph animation is longer than target animation
+                     * We do not automatically modify animation length
+                     */
+                    UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: Bad time couverted, track=%s frame=%f>%f, frame=%d"),
+                        *TsMorphName.ToString(),
+                        TfTimeInCurve,
+                        TfAnimLen,
+                        IterFrame.Frame
+                    );
+                    continue;
+                }
+
+                const float TfCurveValue = TfMorphScale * IterFrame.Factor;
+                const float TfTimeValue = TfTimeInCurve;
+
+                FKeyHandle TsKeyHandle = TsMorphRichCurve.AddKey(TfTimeValue, TfCurveValue, false);
+                TsMorphRichCurve.SetKeyInterpMode(TsKeyHandle, ERichCurveInterpMode::RCIM_Linear);
+                TsMorphRichCurve.SetKeyTangentMode(TsKeyHandle, ERichCurveTangentMode::RCTM_Auto);
+                TsMorphRichCurve.SetKeyTangentWeightMode(TsKeyHandle, ERichCurveTangentWeightMode::RCTWM_WeightedNone);
             }
 
-            TpSkeleton->Modify();
+            TpAnimDataController.SetCurveKeys(MetadataCurveId, TsMorphRichCurve.GetConstRefOfKeys());
         }
 
-        /** Add curve */
-        const FAnimationCurveIdentifier MetadataCurveId(TsMorphName, ERawCurveTrackTypes::RCT_Float);
-        TpAnimDataController.AddCurve(MetadataCurveId, AACF_Metadata);
-
-        const FFloatCurve* TpNewCurve = TpAnimSeq->GetDataModel()->FindFloatCurve(MetadataCurveId);
-
-        /**
-         * This check ensures curve creation
-         * It's here to catch some unknown error, maybe remove it if every thing goes well
-         */
-        check(TpNewCurve && "Bad logic");
-
-        /** Add data to curve */
-        FRichCurve TsMorphRichCurve;
-        for (const FVmdMorphFrameData& IterFrame : TrTrack.Frames)
-        {
-            /** Convert frame time */
-            float TfTimeInCurve = IterFrame.Frame / TfAnimRate;
-            if (TfTimeInCurve > TfAnimLen)
-            {
-                /**
-                 * Ignore if morph animation is longer than target animation
-                 * We do not automatically modify animation length
-                 */
-                UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphToAnimation: Bad time couverted, track=%s frame=%f>%f, frame=%d"),
-                    *TsMorphName.ToString(),
-                    TfTimeInCurve,
-                    TfAnimLen,
-                    IterFrame.Frame
-                );
-                continue;
-            }
-
-            const float TfCurveValue = bNegativeValue ? -IterFrame.Factor : IterFrame.Factor;
-            const float TfTimeValue = TfTimeInCurve;
-
-            FKeyHandle TsKeyHandle = TsMorphRichCurve.AddKey(TfTimeValue, TfCurveValue, false);
-            TsMorphRichCurve.SetKeyInterpMode(TsKeyHandle, ERichCurveInterpMode::RCIM_Linear);
-            TsMorphRichCurve.SetKeyTangentMode(TsKeyHandle, ERichCurveTangentMode::RCTM_Auto);
-            TsMorphRichCurve.SetKeyTangentWeightMode(TsKeyHandle, ERichCurveTangentWeightMode::RCTWM_WeightedNone);
-        }
-
-        TpAnimDataController.SetCurveKeys(MetadataCurveId, TsMorphRichCurve.GetConstRefOfKeys());
 
         TrRecord.bSuccess = true;
         TrRecord.FrameCount = TrTrack.Frames.Num();
         ++CntPassed;
     }
+
+
 
     TpAnimDataController.NotifyPopulated();
     TpAnimDataController.CloseBracket();
@@ -335,10 +346,10 @@ void UMotionDataAsset::PushMorphToAnimation()
 
             if (R.bSuccess)
             {
-                UE_LOG(LogMmdHelper, Log, TEXT("Passed, name=(%u)%s mapped=%d"), 
+                UE_LOG(LogMmdHelper, Log, TEXT("Passed, name=(%u)%s mapped=%u"), 
                     R.FrameCount,
                     *Name,
-                    R.bMapped ? 1 : 0
+                    R.CntMapped
                 );
             }
             else
@@ -352,20 +363,17 @@ void UMotionDataAsset::PushMorphToAnimation()
 #endif
 }
 
+void UMotionDataAsset::InitMorphMapping()
+{
+    for (const TPair<FString, FVmdMorphTrackData>& IterMorphTrack : MorphTracks)
+    {
+        MorphMapConfigs.FindOrAdd(IterMorphTrack.Key);
+    }
+}
+
 void UMotionDataAsset::PreSave(FObjectPreSaveContext SaveContext)
 {
     Super::PreSave(SaveContext);
-
-#if WITH_EDITOR
-    if (MorphMapConfigs.Num() == 0)
-    {
-        for (const TPair<FString, FString>& IterConfig : MorphNameMapping)
-        {
-            FMorphMappingConfig& TrConfigVal = MorphMapConfigs.FindOrAdd(IterConfig.Key);
-            TrConfigVal.MorphName = IterConfig.Value;
-        }
-    }
-#endif
 }
 
 #undef LOCTEXT_NAMESPACE

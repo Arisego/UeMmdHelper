@@ -84,17 +84,32 @@ public:
 };
 
 USTRUCT(BlueprintType)
-struct FMorphMappingConfig
+struct FMorphMappingTarget
 {
     GENERATED_BODY()
 
 public:
     UPROPERTY(EditAnywhere)
-    FString MorphName;
+    FName MorphName;
 
-    /** Inverse the value, use the negative value */
+    /** 
+     * Multiplier of morph value
+     * Use -1.0 if the morph is inversed on two mesh
+     */
     UPROPERTY(EditAnywhere)
-    bool bUseNegative = false;
+    float MorphScale = 1.0f;
+};
+
+USTRUCT(BlueprintType)
+struct FMorphMappingConfig
+{
+    GENERATED_BODY()
+
+public:
+    /** The Target morph arrays */
+    UPROPERTY(EditAnywhere)
+    TArray<FMorphMappingTarget> MorphTargets;
+
 };
 
 /**
@@ -112,6 +127,10 @@ public:
      
     UFUNCTION(CallInEditor, Category = "MorphAnim")
     void PushMorphToAnimation();
+
+    /** Init the mapping config with current animation info */
+    UFUNCTION(CallInEditor, Category = "MorphAnim")
+    void InitMorphMapping();
 
 protected:
     virtual void PreSave(FObjectPreSaveContext SaveContext) override;
@@ -141,14 +160,6 @@ protected:
     /** If enabled, will not set morph if it's not in mapping config */
     UPROPERTY(EditAnywhere, Category="MorphAnim|Mapping", meta=(EditCondition= bUseMorphMapping))
     bool bUseRestrictMapping = true;
-
-    /**
-     * Mapping of morph names
-     * MMD original <--> Target mesh
-     * (Visible-only for back comparability, will auto be transformed to `MorphMapConfigs` while saving asset if it's empty)
-     */
-    UPROPERTY(VisibleAnywhere, Category = "MorphAnim|Mapping", meta = (EditCondition = bUseMorphMapping))
-    TMap<FString, FString> MorphNameMapping;
 
     /**
      * Mapping of morph names and detailed config
