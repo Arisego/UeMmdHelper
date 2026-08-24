@@ -11,6 +11,105 @@
 #define LOCTEXT_NAMESPACE "VmdDataAsset"
 
 
+FVmdBezier::FVmdBezier()
+{
+    Point1 = FVector2D::ZeroVector;
+    Point2 = FVector2D::ZeroVector;
+}
+
+FVmdBezier::FVmdBezier(uint8 x0, uint8 y0, uint8 x1, uint8 y1)
+{
+    Point1 = FVector2D((float)x0 / 127.0f, (float)y0 / 127.0f);
+    Point2 = FVector2D((float)x1 / 127.0f, (float)y1 / 127.0f);
+}
+
+
+FVmdBezier::FVmdBezier(const uint8 RawArray[2][2])
+    :FVmdBezier(RawArray[0][0], RawArray[0][1], RawArray[1][0], RawArray[1][1])
+{
+
+}
+
+float FVmdBezier::Evaluate(float InTime) const
+{
+    const float TfTime = FindBezierX(InTime);
+    return EvalY(TfTime);
+}
+
+float FVmdBezier::EvalX(const float InTime) const
+{
+    const float oneMinusT = 1.0f - InTime;
+
+    const float controlPointX0 = 0.0f;
+    const float controlPointX1 = Point1.X;
+    const float controlPointX2 = Point2.X;
+    const float controlPointX3 = 1.0f;
+
+    const float bezierWeight0 = oneMinusT * oneMinusT * oneMinusT;
+    const float bezierWeight1 = 3.0f * oneMinusT * oneMinusT * InTime;
+    const float bezierWeight2 = 3.0f * oneMinusT * InTime * InTime;
+    const float bezierWeight3 = InTime * InTime * InTime;
+
+    return
+        bezierWeight0 * controlPointX0 +
+        bezierWeight1 * controlPointX1 +
+        bezierWeight2 * controlPointX2 +
+        bezierWeight3 * controlPointX3;
+}
+
+float FVmdBezier::EvalY(const float InTime) const
+{
+    const float oneMinusT = 1.0f - InTime;
+
+    const float controlPointY0 = 0.0f;
+    const float controlPointY1 = Point1.Y;
+    const float controlPointY2 = Point2.Y;
+    const float controlPointY3 = 1.0f;
+
+    const float bezierWeight0 = oneMinusT * oneMinusT * oneMinusT;
+    const float bezierWeight1 = 3.0f * oneMinusT * oneMinusT * InTime;
+    const float bezierWeight2 = 3.0f * oneMinusT * InTime * InTime;
+    const float bezierWeight3 = InTime * InTime * InTime;
+
+    return
+        bezierWeight0 * controlPointY0 +
+        bezierWeight1 * controlPointY1 +
+        bezierWeight2 * controlPointY2 +
+        bezierWeight3 * controlPointY3;
+}
+
+float FVmdBezier::FindBezierX(const float InTime) const
+{
+    const float tolerance = 0.00001f;
+
+    float start = 0.0f;
+    float stop = 1.0f;
+
+    float time = FMath::Clamp(InTime, 0.0f, 1.0f);
+
+    for (int iteration = 0; iteration < 32; ++iteration)
+    {
+        const float t = (start + stop) * 0.5f;
+        const float x = EvalX(t);
+
+        if (std::abs(time - x) <= tolerance)
+        {
+            return t;
+        }
+
+        if (time < x)
+        {
+            stop = t;
+        }
+        else
+        {
+            start = t;
+        }
+    }
+
+    return (start + stop) * 0.5f;
+}
+
 void UMotionDataAsset::LoadFromVmdFile()
 {
 #if WITH_EDITOR
@@ -42,6 +141,13 @@ void UMotionDataAsset::LoadFromVmdFile()
 
         TrAdded.ViewingAngle = IterRawFrame.ViewingAngle;
         TrAdded.Perspective = IterRawFrame.Perspective;
+
+        TrAdded.BezierLocation_X = FVmdBezier(IterRawFrame.Interpolation[0]);
+        TrAdded.BezierLocation_Y = FVmdBezier(IterRawFrame.Interpolation[1]);
+        TrAdded.BezierLocation_Z = FVmdBezier(IterRawFrame.Interpolation[2]);
+        TrAdded.BezierRotation = FVmdBezier(IterRawFrame.Interpolation[3]);
+        TrAdded.BezierDistance = FVmdBezier(IterRawFrame.Interpolation[4]);
+        TrAdded.BezierFOV = FVmdBezier(IterRawFrame.Interpolation[5]);
     }
 
     Algo::Sort(CameraFrames, [&](const FVmdCameraFrameData& A, const FVmdCameraFrameData& B)

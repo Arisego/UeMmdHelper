@@ -6,6 +6,18 @@
 #include "CineCameraActor.h"
 #include "VmdCineCamera.generated.h"
 
+
+UENUM(BlueprintType)
+enum class EVmdCineCameraFrameType : uint8
+{
+    EVCCFT_None UMETA(Hidden),
+    /** Key frame only, interpolation with default unreal CubicKey behavior */
+    EVCCFT_KeyOnly UMETA(DisplayName = "Key Only"),
+    /** Try to interpolate by center/rotation/distance on every frame */
+    EVCCFT_Interp UMETA(DisplayName = "Vmd Interp"),
+
+};
+
 /**
  * Derived cine camera with MMD motion data helper
  */
@@ -33,6 +45,10 @@ protected:
     UFUNCTION(CallInEditor, Category = "Sequencer")
     void CopyCameraTrans();
 
+private:
+    void SyncCameraMotion_KeyOnly();
+    void SyncCameraMotion_Interped();
+
 protected:
     UPROPERTY(EditAnywhere, Category="Sequencer")
     TObjectPtr<class UMotionDataAsset> MotionData;
@@ -43,6 +59,13 @@ protected:
      */
     UPROPERTY(EditAnywhere, Category="Sequencer")
     bool bConfigReady = false;
+
+    /**
+     * How frame is calculated
+     * Using key only mode will make the interpolation work on final camera position, but you will get more control on camera.
+     */
+    UPROPERTY(EditAnywhere, Category = "Sequencer", meta = (EditCondition = "!bConfigReady"))
+    EVmdCineCameraFrameType InterpType = EVmdCineCameraFrameType::EVCCFT_KeyOnly;
 
     /** 
      * The center transform of camera

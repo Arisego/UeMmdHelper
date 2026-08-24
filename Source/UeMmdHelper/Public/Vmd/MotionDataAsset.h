@@ -7,6 +7,32 @@
 #include "MotionDataAsset.generated.h"
 
 
+
+USTRUCT(BlueprintType)
+struct FVmdBezier
+{
+    GENERATED_BODY()
+
+public:
+    FVmdBezier();
+    FVmdBezier(uint8,uint8,uint8,uint8);
+    FVmdBezier(const uint8[2][2]);
+
+    float Evaluate(float InTime) const;
+private:
+    float EvalX(const float InTime) const;
+    float EvalY(const float InTime) const;
+    float FindBezierX(const float InTime) const;
+
+public:
+    UPROPERTY(EditAnywhere)
+    FVector2D Point1;
+
+    UPROPERTY(EditAnywhere)
+    FVector2D Point2;
+};
+
+
 USTRUCT(BlueprintType)
 struct FVmdCameraFrameData
 {
@@ -30,6 +56,24 @@ public:
 
     UPROPERTY(EditAnywhere)
     uint8 Perspective;
+
+    UPROPERTY(EditAnywhere)
+    FVmdBezier BezierLocation_X;
+
+    UPROPERTY(EditAnywhere)
+    FVmdBezier BezierLocation_Y;
+
+    UPROPERTY(EditAnywhere)
+    FVmdBezier BezierLocation_Z;
+
+    UPROPERTY(EditAnywhere)
+    FVmdBezier BezierRotation;
+
+    UPROPERTY(EditAnywhere)
+    FVmdBezier BezierDistance;
+
+    UPROPERTY(EditAnywhere)
+    FVmdBezier BezierFOV;
 };
 
 USTRUCT(BlueprintType)
