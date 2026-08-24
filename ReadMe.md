@@ -10,4 +10,4 @@ What it can do now:
 
 More infomations on how to use this plugin is in the [project wiki page](https://github.com/Arisego/UeMmdHelper/wiki)
 
-> Plugin currently build and test on UE5.6.1
+> Plugin currently build and test on UE5.8
