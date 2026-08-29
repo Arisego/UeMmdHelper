@@ -7,6 +7,7 @@ What it can do now:
 - Import VMD as a data asset
 - Generate camera motion track in sequence from VMD
 - Generate and mapping morph target in animation from VMD
+- Generate mroph motion track in sequence from VMD
 
 More infomations on how to use this plugin is in the [project wiki page](https://github.com/Arisego/UeMmdHelper/wiki)
 

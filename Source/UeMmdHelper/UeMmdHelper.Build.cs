@@ -41,6 +41,7 @@ public class UeMmdHelper : ModuleRules
                 "SlateCore",
                 "CinematicCamera",
                 "LevelSequence",
+                "ControlRig",
                 // ... add private dependencies that you statically link with here ...	
             }
             );

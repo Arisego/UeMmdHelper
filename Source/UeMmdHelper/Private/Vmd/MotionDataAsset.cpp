@@ -5,6 +5,10 @@
 #include "Vmd/VmdDataHelper.h"
 #include "UeMmdHelper.h"
 #include "UObject/ObjectSaveContext.h"
+#include "MovieSceneTrack.h"
+#include "MovieSceneSection.h"
+#include "SequencerCurveEditorObject.h"
+#include "Sequencer/MovieSceneControlRigParameterTrack.h"
 
 
 
@@ -475,6 +479,376 @@ void UMotionDataAsset::InitMorphMapping()
     {
         MorphMapConfigs.FindOrAdd(IterMorphTrack.Key);
     }
+
+    Modify();
+}
+
+
+FName GetSafeControlRigName(const FString& ControlKeyRaw, const TSet<FName>& ControlNames)
+{
+    const FName& SanitizedName = URigHierarchy::GetSanitizedName(FName(*ControlKeyRaw));
+    FName TsSafeName = SanitizedName;
+
+    int32 TdNameTryCnt = 0;
+    while (ControlNames.Contains(TsSafeName))
+    {
+        TsSafeName = *FString::Printf(TEXT("%s_%d"), *SanitizedName.ToString(), TdNameTryCnt);
+        ++TdNameTryCnt;
+    };
+
+    return TsSafeName;
+}
+
+void UMotionDataAsset::GenerateControlRigConfig()
+{
+    VmdControlRigMorphConfig.MorphMapConfigs.Empty(MorphMapConfigs.Num());
+    ControlNameToRawName.Empty(MorphMapConfigs.Num());
+
+    /** Cache for mapped key, so we can filter them while decide unhandled ones */
+    TSet<FString> TsMappedMorphKey;
+
+    TSet<FName> ControlNames;
+    for (const TPair<FString, FMorphMappingConfig>& IterMorphMap: MorphMapConfigs)
+    {
+        FVmdControlRigMorphPair& TrNewMorphPair = VmdControlRigMorphConfig.MorphMapConfigs.AddDefaulted_GetRef();
+
+        /** Control name conversion */
+        const FString& ControlKeyRaw = IterMorphMap.Key;
+        const FName& TsSafeName = GetSafeControlRigName(ControlKeyRaw, ControlNames);
+
+        ControlNames.Add(TsSafeName);
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::GenerateControlRigConfig: Rig name, %s => %s"),
+            *ControlKeyRaw,
+            *TsSafeName.ToString()
+        );
+
+        TrNewMorphPair.ControlName = TsSafeName;
+        ControlNameToRawName.FindOrAdd(TsSafeName) = ControlKeyRaw;
+
+        const FMorphMappingConfig& IterMorphMapConfig = IterMorphMap.Value;
+        for (const FMorphMappingTarget& IterMorph : IterMorphMapConfig.MorphTargets)
+        {
+            FControlRigMorphConfig& TrNewMorphConfig = TrNewMorphPair.TargetMorphs.AddDefaulted_GetRef();
+            TrNewMorphConfig.MorphName = IterMorph.MorphName;
+            TrNewMorphConfig.MorphScale = IterMorph.MorphScale;
+        }
+    }
+
+    /** Handle cirect copy morphs */
+    for (const FString& IterMorphKey : DirectCopyMorphs)
+    {
+        /** Ignore if already mapped */
+        if (TsMappedMorphKey.Contains(IterMorphKey))
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::GenerateControlRigConfig: Key [%s] already in MorphMapConfigs"), *IterMorphKey);
+            continue;
+        }
+
+        /** Control name conversion */
+        const FString& ControlKeyRaw = IterMorphKey;
+        const FName& TsSafeName = GetSafeControlRigName(ControlKeyRaw, ControlNames);
+
+        ControlNames.Add(TsSafeName);
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::GenerateControlRigConfig: Direct name, %s => %s"),
+            *ControlKeyRaw,
+            *TsSafeName.ToString()
+        );
+
+        FVmdControlRigMorphPair& TrNewMorphPair = VmdControlRigMorphConfig.MorphMapConfigs.AddDefaulted_GetRef();
+        TrNewMorphPair.ControlName = TsSafeName;
+        ControlNameToRawName.FindOrAdd(TsSafeName) = ControlKeyRaw;
+
+        /** Mapped to the same name */
+        {
+            FControlRigMorphConfig& TrNewMorphConfig = TrNewMorphPair.TargetMorphs.AddDefaulted_GetRef();
+            TrNewMorphConfig.MorphName = TsSafeName;
+            TrNewMorphConfig.MorphScale = 1.0f;
+        }
+    }
+    Modify();
+}
+
+void UMotionDataAsset::PushMorphDataToLevelSequencer()
+{
+#if WITH_EDITOR
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: --- Work start ---"));
+
+    /** Ignore if no data */
+    const int32 TdConfigNum = VmdControlRigMorphConfig.MorphMapConfigs.Num();
+    if (TdConfigNum <= 0)
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: VmdControlRigMorphConfig empty, ignored"));
+        return;
+    }
+
+    ULevelSequence* TpLevelSeq = ULevelSequenceEditorBlueprintLibrary::GetFocusedLevelSequence();
+    if (!IsValid(TpLevelSeq))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Bad level sequencer"));
+        return;
+    }
+
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Sequencer=%s"), *GetNameSafe(TpLevelSeq));
+
+    /** Print out debug info */
+    {
+        const TArray<FMovieSceneBindingProxy>& TarrSelBinding = ULevelSequenceEditorBlueprintLibrary::GetSelectedBindings();
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: GetSelectedBindings num=%d"), TarrSelBinding.Num());
+        for (const FMovieSceneBindingProxy& IterSel : TarrSelBinding)
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s"), *IterSel.BindingID.ToString());
+        }
+
+        const TArray<UMovieSceneTrack*>& TarrSelectedTracks = ULevelSequenceEditorBlueprintLibrary::GetSelectedTracks();
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: GetSelectedTracks num=%d"), TarrSelectedTracks.Num());
+        for (const UMovieSceneTrack* IterSel : TarrSelectedTracks)
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s"), *GetNameSafe(IterSel));
+        }
+
+        const TArray<FSequencerChannelProxy>& TarrSelectedChannels = ULevelSequenceEditorBlueprintLibrary::GetSelectedChannels();
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: GetSelectedChannels num=%d"), TarrSelectedChannels.Num());
+        for (const FSequencerChannelProxy& IterSel : TarrSelectedChannels)
+        {
+            UMovieSceneSection* Section = IterSel.Section;
+            if (Section)
+            {
+                UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > (%s)%s"),
+                    *IterSel.ChannelName.ToString(),
+                    *GetNameSafe(Section)
+                );
+            }
+            else
+            {
+                UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > [bad]%s"), *IterSel.ChannelName.ToString());
+            }
+        }
+
+        /** Gets the currently selected channels. */
+        const TArray<UMovieSceneSection*>& TarrSelectedSections = ULevelSequenceEditorBlueprintLibrary::GetSelectedSections();
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: GetSelectedSections num=%d"), TarrSelectedSections.Num());
+        for (const UMovieSceneSection* IterSel : TarrSelectedSections)
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s"), *GetNameSafe(IterSel));
+        }
+    }
+
+    UMovieScene* TpMovieScene = TpLevelSeq->GetMovieScene();
+    if (!IsValid(TpMovieScene))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Bad GetMovieScene"));
+        return;
+    }
+
+    const TArray<UMovieSceneTrack*>& TarrSelectedTracks = ULevelSequenceEditorBlueprintLibrary::GetSelectedTracks();
+    if (TarrSelectedTracks.Num() != 1)
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: check failed, should select the control rig track, current cnt=%d"),
+            TarrSelectedTracks.Num()
+        );
+        return;
+    }
+
+    UMovieSceneTrack* TpCurSceneTrack = TarrSelectedTracks[0];
+    if (!IsValid(TpCurSceneTrack))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Bad current selected track ptr."));
+        return;
+    }
+
+    const UMovieSceneControlRigParameterTrack* TpControlRigTrack = Cast<UMovieSceneControlRigParameterTrack>(TpCurSceneTrack);
+    if (!IsValid(TpControlRigTrack))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Select track type failed, ptr=(%p(%s) class=%s"),
+            TpCurSceneTrack,
+            *GetFullNameSafe(TpCurSceneTrack),
+            *GetFullNameSafe(TpCurSceneTrack->GetClass())
+        );
+        return;
+    }
+
+    /** Check binded control rig */
+    const UControlRig* TpControlRig = TpControlRigTrack->GetControlRig();
+    if (!IsValid(TpControlRig))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Bad control rig from track, ptr=(%p(%s) class=%s"),
+            TpCurSceneTrack,
+            *GetFullNameSafe(TpCurSceneTrack),
+            *GetFullNameSafe(TpCurSceneTrack->GetClass())
+        );
+        return;
+    }
+
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Control rig=(%p)%s"), TpControlRig, *GetFullNameSafe(TpControlRig));
+
+    const TArray<UMovieSceneSection*>& TrCrSections = TpControlRigTrack->GetAllSections();
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: Section num=%d"), TrCrSections.Num());
+
+    for (const UMovieSceneSection* Section : TrCrSections)
+    {
+        const UMovieSceneControlRigParameterSection* CRSection = CastChecked<UMovieSceneControlRigParameterSection>(Section);
+        if (!IsValid(CRSection))
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > Bad type, ptr=(%p)%s"), Section, *GetNameSafe(Section));
+            continue;
+        }
+
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > (%p)%s"), CRSection, *GetNameSafe(CRSection));
+        for (const TPair<FName, FChannelMapInfo> IterChanelMap : CRSection->ControlChannelMap)
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: >>> %s %d"),
+                *IterChanelMap.Key.ToString(),
+                IterChanelMap.Value.TotalChannelIndex
+            );
+        }
+    }
+
+    FFrameRate TickResolution = TpMovieScene->GetTickResolution();
+    FFrameRate DisplayRate = TpMovieScene->GetDisplayRate();
+
+    FScopedSlowTask SlowTask(TdConfigNum, LOCTEXT("Op_Seuqencer_ControlRig", "Sending morph data to control rig in sequencer"));
+    SlowTask.MakeDialog(false/*bShowCancelButton*/, true/*bAllowInPIE*/);
+
+    /** Get and cache the section ptr */
+    UMovieSceneSection* TpSection = TpControlRigTrack->GetSectionToKey();
+    UMovieSceneControlRigParameterSection* CRSection = CastChecked<UMovieSceneControlRigParameterSection>(TpSection);
+    if (!IsValid(CRSection))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Bad section, ptr=(%p)%s"), TpSection, *GetNameSafe(TpSection));
+        return;
+    }
+
+    /**
+     * Get channel proxy
+     * this will call ReconstructChannelProxy which is needed before accessing the ControlChannelMap.
+     * @note: The behavior of channel proxy is complicated, if the order changed during operation, we will not cache it.
+     */
+    FMovieSceneChannelProxy& TrChanelProxy = CRSection->GetChannelProxy();
+    TArrayView<FMovieSceneFloatChannel*> FloatChannels = TrChanelProxy.GetChannels<FMovieSceneFloatChannel>();
+
+    /** Cache handled raw data key */
+    TSet<FString> RawDataHandledKeys;
+
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) === Total count:%d ==="), VmdControlRigMorphConfig.MorphMapConfigs.Num());
+    for (const FVmdControlRigMorphPair& IterPair: VmdControlRigMorphConfig.MorphMapConfigs)
+    {
+        SlowTask.EnterProgressFrame(1.0f, FText::FromName(IterPair.ControlName));
+
+        /** Find the raw morph animation name */
+        const FString* TpRawName = ControlNameToRawName.Find(IterPair.ControlName);
+        if (!TpRawName)
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Bad raw name, name=%s"),
+                *IterPair.ControlName.ToString()
+            );
+            continue;
+        }
+        const FString& TstrRawName = *TpRawName;
+
+        /** 
+         * Check data exist
+         * This will not be a warning, as the morph may not be animated
+         */
+        FVmdMorphTrackData* TpMorphTrackDataRaw = MorphTracks.Find(TstrRawName);
+        if (!TpMorphTrackDataRaw)
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Ignore no data, name=%s rawname=%s"),
+                *IterPair.ControlName.ToString(),
+                *TstrRawName
+            );
+            continue;
+        }
+
+        /** Find channel info */
+        FChannelMapInfo* pChannelIndex = CRSection->ControlChannelMap.Find(IterPair.ControlName);
+        if (pChannelIndex == nullptr)
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Bad control, name=%s"), *IterPair.ControlName.ToString());
+            continue;
+        }
+
+        /** Check if control exist on rig  */
+        int32 ChannelIndex = pChannelIndex->ChannelIndex;
+        FRigControlElement* ControlElement = TpControlRig->FindControl(IterPair.ControlName);
+        if (!ControlElement)
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Control not on rig, name=%s"), *IterPair.ControlName.ToString());
+            continue;
+        }
+
+        /** Check if rig type matches */
+        if (ControlElement->Settings.ControlType != ERigControlType::Float)
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Control type fail, name=%s val=%d"),
+                *IterPair.ControlName.ToString(),
+                (int32)ControlElement->Settings.ControlType
+            );
+            continue;
+        }
+
+        /** Get the float channel */
+        FMovieSceneFloatChannel* TpFloatChannel = FloatChannels.IsValidIndex(ChannelIndex) ? FloatChannels[ChannelIndex] : nullptr;
+        if(!TpFloatChannel)
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Bad channel, name=%s index=%d/%d"),
+                *IterPair.ControlName.ToString(),
+                ChannelIndex,
+                FloatChannels.Num()
+            );
+            continue;
+        }
+
+        /** Start frame process */
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Start for %s, ptr=(%p)%s channel[%d]=%p frame=%d"),
+            *IterPair.ControlName.ToString(),
+            TpSection, *GetNameSafe(TpSection),
+            ChannelIndex,
+            TpFloatChannel,
+            TpMorphTrackDataRaw->Frames.Num()
+        );
+        for (const FVmdMorphFrameData& IterRawFrame : TpMorphTrackDataRaw->Frames)
+        {
+            const FFrameNumber TsCurFrame = FFrameRate::TransformTime(FFrameNumber((int32)IterRawFrame.Frame), DisplayRate, TickResolution).GetFrame();
+            TpFloatChannel->AddCubicKey(TsCurFrame, IterRawFrame.Factor);
+        }
+
+        RawDataHandledKeys.Add(TstrRawName);
+    }
+
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) === End pushed:%d/%d ==="),
+        RawDataHandledKeys.Num(),
+        MorphTracks.Num()
+    );
+    for (const TPair<FString, FVmdMorphTrackData>& IterMorphTrack : MorphTracks)
+    {
+        const FString& IterRawKey = IterMorphTrack.Key;
+        if (RawDataHandledKeys.Contains(IterRawKey))
+        {
+            continue;
+        }
+
+        if (!MorphMapConfigs.Contains(IterRawKey))
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s, not in MorphMapConfigs"), *IterRawKey);
+            continue;
+        }
+
+        /** Ignored by logic above, its hard to put them together */
+        UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s, other error. Try search above log for detail"), *IterRawKey);
+    }
+    UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: --- All work done ---"));
+
+
+    /** 
+     * Mark modify and notify changed, so other logic can have a chance to know we changed things
+     * Sometimes sequencer editor may not update morph if it does not know we changed it, a re-save may help but it's confusing.
+     */
+    CRSection->Modify();
+    CRSection->BroadcastChanged();
+    TpMovieScene->Modify();
+    TpMovieScene->BroadcastChanged();
+
+#endif
 }
 
 void UMotionDataAsset::PreSave(FObjectPreSaveContext SaveContext)

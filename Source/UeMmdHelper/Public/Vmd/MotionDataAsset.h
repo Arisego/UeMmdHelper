@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Vmd/VmdControlRigDefines.h"
 #include "MotionDataAsset.generated.h"
 
 
@@ -133,12 +134,14 @@ struct FMorphMappingTarget
     GENERATED_BODY()
 
 public:
+    /** The morph name on target mesh */
     UPROPERTY(EditAnywhere)
     FName MorphName;
 
     /** 
      * Multiplier of morph value
-     * Use -1.0 if the morph is inversed on two mesh
+     * Use -1.0 if the morph is inversed on two mesh.
+     * Keep 1.0(default) will work at most of the time.
      */
     UPROPERTY(EditAnywhere)
     float MorphScale = 1.0f;
@@ -225,5 +228,36 @@ public:
     /** Bone track data */
     UPROPERTY(VisibleAnywhere)
     TMap<FString, FVmdBoneTrackData> BoneTracks;
+
+public:
+    //////////////////////////////////////////////////////////////////////////
+    // Currently control rig supports a subset of blueprint, not all the functions are supported.
+    // So we have to do some additional work to generate config manually.
+
+    /** Generate the control rig config */
+    UFUNCTION(CallInEditor, meta = (Category = "ControlRig"))
+    void GenerateControlRigConfig();
+
+public:
+    /** Copy this to control rig helper function */
+    UPROPERTY(VisibleAnywhere, meta=(Category="ControlRig"))
+    FVmdControlRigMorphConfig VmdControlRigMorphConfig;
+
+    UPROPERTY(VisibleAnywhere, meta = (Category = "ControlRig"))
+    TMap<FName, FString> ControlNameToRawName;
+
+    /** 
+     * Morph key that does not need mapping.
+     * The raw string will be passed directly to control rig.
+     * If the key is already in MorphMapConfigs, it will be ignored.
+     * 
+     * @note: Unreal will have a internal Sanitized on control rig morph names.
+     */
+    UPROPERTY(EditAnywhere, meta = (Category = "ControlRig"))
+    TSet<FString> DirectCopyMorphs;
+
+public:
+    UFUNCTION(CallInEditor, meta = (Category = "ControlRig"))
+    void PushMorphDataToLevelSequencer();
     
 };
