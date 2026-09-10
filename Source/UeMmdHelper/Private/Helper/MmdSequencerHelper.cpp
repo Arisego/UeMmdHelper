@@ -6,6 +6,10 @@
 #include "LevelSequence.h"
 #include "MovieSceneCommonHelpers.h"
 #include "MovieScene.h"
+#include "Tracks/MovieSceneFloatTrack.h"
+#include "Sections/MovieSceneFloatSection.h"
+#include "Tracks/MovieSceneVectorTrack.h"
+#include "Sections/MovieSceneVectorSection.h"
 
 
 FGuid UMmdSequencerHelper::BindActorToLevelSequence(AActor* InActor, class ULevelSequence* InLevelSequence)
@@ -123,4 +127,69 @@ ECameraProjectionMode::Type UMmdSequencerHelper::ConvertFromVmdCameraPerspective
     }
 
     return ECameraProjectionMode::Perspective;
+}
+
+UMovieSceneFloatSection* UMmdSequencerHelper::GetFloatSection(class UMovieScene* InMovieScene, const FGuid& PossessableGuid, const FName& InTrackName)
+{
+    if (!IsValid(InMovieScene))
+    {
+        UE_LOG(LogMmdHelper, Error, TEXT("UMmdSequencerHelper::GetFloatSection: Bad scene"));
+        return nullptr;
+    }
+
+    UMovieSceneFloatTrack* TpTrack = InMovieScene->FindTrack<UMovieSceneFloatTrack>(PossessableGuid, InTrackName);
+    if (!TpTrack)
+    {
+        TpTrack = InMovieScene->AddTrack<UMovieSceneFloatTrack>(PossessableGuid);
+    }
+    else
+    {
+        TpTrack->RemoveAllAnimationData();
+    }
+
+    TpTrack->SetPropertyNameAndPath(InTrackName, InTrackName.ToString());
+    UMovieSceneFloatSection* TpSection = Cast<UMovieSceneFloatSection>(TpTrack->CreateNewSection());
+    if (!TpSection)
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMmdSequencerHelper::GetFloatSection: Failed section create, name=%s"), *InTrackName.ToString());
+        return nullptr;
+    }
+
+    TpTrack->AddSection(*TpSection);
+    TpSection->SetRange(TRange<FFrameNumber>::All());
+
+    return TpSection;
+}
+
+class UMovieSceneDoubleVectorSection* UMmdSequencerHelper::GetVectorSection(class UMovieScene* InMovieScene, const FGuid& PossessableGuid, const FName& InTrackName)
+{
+    if (!IsValid(InMovieScene))
+    {
+        UE_LOG(LogMmdHelper, Error, TEXT("UMmdSequencerHelper::GetVectorSection: Bad scene"));
+        return nullptr;
+    }
+
+    UMovieSceneDoubleVectorTrack* TpTrack = InMovieScene->FindTrack<UMovieSceneDoubleVectorTrack>(PossessableGuid, InTrackName);
+    if (!TpTrack)
+    {
+        TpTrack = InMovieScene->AddTrack<UMovieSceneDoubleVectorTrack>(PossessableGuid);
+    }
+    else
+    {
+        TpTrack->RemoveAllAnimationData();
+    }
+
+    TpTrack->SetPropertyNameAndPath(InTrackName, InTrackName.ToString());
+    TpTrack->SetNumChannelsUsed(3);
+    UMovieSceneDoubleVectorSection* TpSection = Cast<UMovieSceneDoubleVectorSection>(TpTrack->CreateNewSection());
+    if (!TpSection)
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("UMmdSequencerHelper::GetVectorSection: Failed section create, name=%s"), *InTrackName.ToString());
+        return nullptr;
+    }
+
+    TpTrack->AddSection(*TpSection);
+    TpSection->SetRange(TRange<FFrameNumber>::All());
+
+    return TpSection;
 }

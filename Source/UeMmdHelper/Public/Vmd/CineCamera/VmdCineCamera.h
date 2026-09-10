@@ -46,6 +46,9 @@ protected:
     void CopyCameraTrans();
 
 private:
+    /** Key raw data for review */
+    void SyncCameraMotionRaw();
+
     void SyncCameraMotion_KeyOnly();
     void SyncCameraMotion_Interped();
 
@@ -59,6 +62,13 @@ protected:
      */
     UPROPERTY(EditAnywhere, Category="Sequencer")
     bool bConfigReady = false;
+
+    /** 
+     * Key raw data in channels
+     * Raw channel is just a way to see raw data, will have no affect on camera animation
+     */
+    UPROPERTY(EditAnywhere, Category = "Sequencer")
+    bool bKeyRawDatas = true;
 
     /**
      * How frame is calculated
@@ -89,5 +99,13 @@ protected:
      */
     UPROPERTY(EditAnywhere, Category="Sequencer")
     float ViewAngelBias = 1.666f;
+
+protected:
+    UPROPERTY(VisibleAnywhere, Interp)
+    FVector RawLocation;
+    UPROPERTY(VisibleAnywhere, Interp)
+    FVector RawAngel;
+    UPROPERTY(VisibleAnywhere, Interp)
+    float RawDist;
 
 };

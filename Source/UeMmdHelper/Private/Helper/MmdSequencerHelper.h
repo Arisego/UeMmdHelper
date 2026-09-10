@@ -25,4 +25,8 @@ public:
 
     /** Convert projection mode from raw data */
     static ECameraProjectionMode::Type ConvertFromVmdCameraPerspective(const uint8 InVal);
+
+
+    static class UMovieSceneFloatSection* GetFloatSection(class UMovieScene* InMovieScene, const FGuid& PossessableGuid, const FName& InTrackName);
+    static class UMovieSceneDoubleVectorSection* GetVectorSection(class UMovieScene* InMovieScene, const FGuid& PossessableGuid, const FName& InTrackName);
 };

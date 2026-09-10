@@ -20,6 +20,7 @@
 #include "Tracks/MovieSceneFloatTrack.h"
 #include "Sections/MovieSceneFloatSection.h"
 #endif
+#include "Tracks/MovieSceneVectorTrack.h"
 
 
 
@@ -41,10 +42,12 @@ AVmdCineCamera::AVmdCineCamera(const FObjectInitializer& ObjectInitializer)
 
 void AVmdCineCamera::SyncCameraMotion()
 {
+
     switch (InterpType)
     {
     case EVmdCineCameraFrameType::EVCCFT_KeyOnly:
     {
+        SyncCameraMotionRaw();
         SyncCameraMotion_KeyOnly();
         break;
     }
@@ -58,6 +61,90 @@ void AVmdCineCamera::SyncCameraMotion()
         UE_LOG(LogMmdHelper, Error, TEXT("AVmdCineCamera::SyncCameraMotion: Bad InterpType"));
         break;
     }
+    }
+}
+
+void AVmdCineCamera::SyncCameraMotionRaw()
+{
+    if (!bKeyRawDatas)
+    {
+        UE_LOG(LogMmdHelper, Log, TEXT("AVmdCineCamera::SyncCameraMotionRaw: Ignored as not enabled"));
+        return;
+    }
+
+    /** Get focused sequence */
+    ULevelSequence* TpLevelSeq = ULevelSequenceEditorBlueprintLibrary::GetFocusedLevelSequence();
+    if (!IsValid(TpLevelSeq))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("AVmdCineCamera::SyncCameraMotionRaw: Bad level sequencer"));
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("No Level Sequence", "Could not find active level sequence")
+        );
+        return;
+    }
+
+    UMovieScene* TpMovieScene = TpLevelSeq->GetMovieScene();
+    if (!IsValid(TpMovieScene))
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("AVmdCineCamera::SyncCameraMotionRaw: Bad GetMovieScene"));
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("No Movie Sequence", "Could not find movie sequence in level sequence")
+        );
+        return;
+    }
+
+    /** Get motion data */
+    UMotionDataAsset* TpMotionData = GetMotionData();
+    if (!TpMotionData)
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("AVmdCineCamera::SyncCameraMotionRaw: Bad GetMotionData"));
+        FMessageDialog::Open(EAppMsgCategory::Error, EAppMsgType::Type::Ok,
+            LOCTEXT("No MotionData", "MotionData not found, please check the `MotionData` config")
+        );
+        return;
+    }
+
+    UE_LOG(LogMmdHelper, Log, TEXT("AVmdCineCamera::SyncCameraMotionRaw: Camera=%p)%s"), this, *GetNameSafe(this));
+    const FScopedTransaction Transaction(LOCTEXT("SyncCameraMotionRaw", "Apply Raw Data"));
+    FScopedSlowTask SlowTask(3.0f, FText::Format(LOCTEXT("BeginRawDatas", "Raw data {0}"), FText::FromName(TpMotionData->GetFName())));
+    SlowTask.MakeDialog(false/*bShowCancelButton*/, true/*bAllowInPIE*/);
+
+    /** Create sections */
+    const FGuid PossessableGuid = UMmdSequencerHelper::BindActorToLevelSequence(this, TpLevelSeq);
+
+    UMovieSceneFloatSection* TpDistanceSection = UMmdSequencerHelper::GetFloatSection(TpMovieScene, PossessableGuid, TEXT("RawDist"));
+
+    UMovieSceneDoubleVectorSection* TpRawLocationTrack = UMmdSequencerHelper::GetVectorSection(TpMovieScene, PossessableGuid, TEXT("RawLocation"));
+    UMovieSceneDoubleVectorSection* TpRawAngelTrack = UMmdSequencerHelper::GetVectorSection(TpMovieScene, PossessableGuid, TEXT("RawAngel"));
+
+    if (!TpDistanceSection||!TpRawLocationTrack||!TpRawAngelTrack)
+    {
+        UE_LOG(LogMmdHelper, Warning, TEXT("AVmdCineCamera::SyncCameraMotionRaw: Bad ssection"));
+        return;
+    }
+
+    /** Prepare data for time convert */
+    FFrameRate TickResolution = TpMovieScene->GetTickResolution();
+    FFrameRate DisplayRate = TpMovieScene->GetDisplayRate();
+
+    /** Fill data */
+    FMovieSceneFloatChannel& TrDistanceProxy = TpDistanceSection->GetChannel();
+    FMovieSceneChannelProxy& TrLocationProxy = TpRawLocationTrack->GetChannelProxy();
+    FMovieSceneChannelProxy& TrAngelProxy = TpRawAngelTrack->GetChannelProxy();
+
+    for (const FVmdCameraFrameData& IterCameraFrame : TpMotionData->CameraFrames)
+    {
+        const FFrameNumber TsCurFrame = FFrameRate::TransformTime(FFrameNumber((int32)IterCameraFrame.Frame), DisplayRate, TickResolution).GetFrame();
+
+        TrLocationProxy.GetChannel<FMovieSceneDoubleChannel>(0)->AddCubicKey(TsCurFrame, IterCameraFrame.Location.X);
+        TrLocationProxy.GetChannel<FMovieSceneDoubleChannel>(1)->AddCubicKey(TsCurFrame, IterCameraFrame.Location.Y);
+        TrLocationProxy.GetChannel<FMovieSceneDoubleChannel>(2)->AddCubicKey(TsCurFrame, IterCameraFrame.Location.Z);
+
+        TrAngelProxy.GetChannel<FMovieSceneDoubleChannel>(0)->AddCubicKey(TsCurFrame, IterCameraFrame.Rotate.X);
+        TrAngelProxy.GetChannel<FMovieSceneDoubleChannel>(1)->AddCubicKey(TsCurFrame, IterCameraFrame.Rotate.Y);
+        TrAngelProxy.GetChannel<FMovieSceneDoubleChannel>(2)->AddCubicKey(TsCurFrame, IterCameraFrame.Rotate.Z);
+
+        TrDistanceProxy.AddCubicKey(TsCurFrame, -IterCameraFrame.Length);
     }
 }
 
@@ -321,6 +408,23 @@ void AVmdCineCamera::SyncCameraMotion_Interped()
 
         FMovieSceneChannelProxy& TrChanelProxy = TransformSection->GetChannelProxy();
 
+
+        UMovieSceneFloatSection* TpDistanceSection = nullptr;
+        UMovieSceneDoubleVectorSection* TpRawLocationTrack = nullptr;
+        UMovieSceneDoubleVectorSection* TpRawAngelTrack = nullptr;
+        if (bKeyRawDatas)
+        {
+            TpDistanceSection = UMmdSequencerHelper::GetFloatSection(TpMovieScene, PossessableGuid, TEXT("RawDist"));
+            TpRawLocationTrack = UMmdSequencerHelper::GetVectorSection(TpMovieScene, PossessableGuid, TEXT("RawLocation"));
+            TpRawAngelTrack = UMmdSequencerHelper::GetVectorSection(TpMovieScene, PossessableGuid, TEXT("RawAngel"));
+
+            if (!TpDistanceSection || !TpRawLocationTrack || !TpRawAngelTrack)
+            {
+                UE_LOG(LogMmdHelper, Warning, TEXT("AVmdCineCamera::SyncCameraMotion_Interped: Bad ssection"));
+                return;
+            }
+        }
+
         /** Start data process */
         const TArray<FVmdCameraFrameData>& TarrCameraFrameRaw = TpMotionData->CameraFrames;
         for (int32 IterFrameIdx = 0; IterFrameIdx < TarrCameraFrameRaw.Num(); ++IterFrameIdx)
@@ -349,6 +453,19 @@ void AVmdCineCamera::SyncCameraMotion_Interped()
                 TrChanelProxy.GetChannel<FMovieSceneDoubleChannel>(3)->AddCubicKey(TsCurFrame, TfrFinalRot.Roll);
                 TrChanelProxy.GetChannel<FMovieSceneDoubleChannel>(4)->AddCubicKey(TsCurFrame, TfrFinalRot.Pitch);
                 TrChanelProxy.GetChannel<FMovieSceneDoubleChannel>(5)->AddCubicKey(TsCurFrame, TfrFinalRot.Yaw);
+
+                if (bKeyRawDatas)
+                {
+                    TpRawLocationTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(0)->AddLinearKey(TsCurFrame, IterCameraFrame.Location.X);
+                    TpRawLocationTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(1)->AddLinearKey(TsCurFrame, IterCameraFrame.Location.Y);
+                    TpRawLocationTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(2)->AddLinearKey(TsCurFrame, IterCameraFrame.Location.Z);
+
+                    TpRawAngelTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(0)->AddLinearKey(TsCurFrame, IterCameraFrame.Rotate.X);
+                    TpRawAngelTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(1)->AddLinearKey(TsCurFrame, IterCameraFrame.Rotate.Y);
+                    TpRawAngelTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(2)->AddLinearKey(TsCurFrame, IterCameraFrame.Rotate.Z);
+
+                    TpDistanceSection->GetChannel().AddLinearKey(TsCurFrame, -IterCameraFrame.Length);
+                }
             }
 
             /** Check next data existence */
@@ -394,6 +511,19 @@ void AVmdCineCamera::SyncCameraMotion_Interped()
                 TrChanelProxy.GetChannel<FMovieSceneDoubleChannel>(3)->AddCubicKey(TsCurFrame, TfrFinalRot.Roll);
                 TrChanelProxy.GetChannel<FMovieSceneDoubleChannel>(4)->AddCubicKey(TsCurFrame, TfrFinalRot.Pitch);
                 TrChanelProxy.GetChannel<FMovieSceneDoubleChannel>(5)->AddCubicKey(TsCurFrame, TfrFinalRot.Yaw);
+
+                if (bKeyRawDatas)
+                {
+                    TpRawLocationTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(0)->AddCubicKey(TsCurFrame, TfLocationInperpX);
+                    TpRawLocationTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(1)->AddCubicKey(TsCurFrame, TfLocationInperpY);
+                    TpRawLocationTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(2)->AddCubicKey(TsCurFrame, TfLocationInperpZ);
+
+                    TpRawAngelTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(0)->AddCubicKey(TsCurFrame, TfvRotationInperp.X);
+                    TpRawAngelTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(1)->AddCubicKey(TsCurFrame, TfvRotationInperp.Y);
+                    TpRawAngelTrack->GetChannelProxy().GetChannel<FMovieSceneDoubleChannel>(2)->AddCubicKey(TsCurFrame, TfvRotationInperp.Z);
+
+                    TpDistanceSection->GetChannel().AddCubicKey(TsCurFrame, -TfDistanceInperp);
+                }
             }
         }
     }
