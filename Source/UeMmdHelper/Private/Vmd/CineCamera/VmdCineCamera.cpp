@@ -26,7 +26,6 @@
 
 #define LOCTEXT_NAMESPACE "AVmdCineCamera"
 
-static const FName MmdSpringArmLengthName = TEXT("VmdCameraTransLen");
 static const FName CameraFovName = TEXT("FieldOfView");
 static const FName ProjectionModeName = TEXT("ProjectionMode");
 
@@ -485,13 +484,13 @@ void AVmdCineCamera::SyncCameraMotion_Interped()
                 /** interpolation */
                 const float TfInterpTime = (IterFrameCreateIdx - TdCurRawFrameCnt) / TfInterpSpan;
 
-                const float TfLocationInperpX = FMath::FInterpTo(TrCurrentRawFrame.Location.X, TrNextRawFrame.Location.X, TrCurrentRawFrame.BezierLocation_X.Evaluate(TfInterpTime), 1.0f);
-                const float TfLocationInperpY = FMath::FInterpTo(TrCurrentRawFrame.Location.Y, TrNextRawFrame.Location.Y, TrCurrentRawFrame.BezierLocation_Y.Evaluate(TfInterpTime), 1.0f);
-                const float TfLocationInperpZ = FMath::FInterpTo(TrCurrentRawFrame.Location.Z, TrNextRawFrame.Location.Z, TrCurrentRawFrame.BezierLocation_Z.Evaluate(TfInterpTime), 1.0f);
+                const float TfLocationInperpX = FMath::FInterpTo(TrCurrentRawFrame.Location.X, TrNextRawFrame.Location.X, TrNextRawFrame.BezierLocation_X.Evaluate(TfInterpTime), 1.0f);
+                const float TfLocationInperpY = FMath::FInterpTo(TrCurrentRawFrame.Location.Y, TrNextRawFrame.Location.Y, TrNextRawFrame.BezierLocation_Y.Evaluate(TfInterpTime), 1.0f);
+                const float TfLocationInperpZ = FMath::FInterpTo(TrCurrentRawFrame.Location.Z, TrNextRawFrame.Location.Z, TrNextRawFrame.BezierLocation_Z.Evaluate(TfInterpTime), 1.0f);
 
-                const float TfDistanceInperp = FMath::FInterpTo(TrCurrentRawFrame.Length, TrNextRawFrame.Length, TrCurrentRawFrame.BezierDistance.Evaluate(TfInterpTime), 1.0f);
+                const float TfDistanceInperp = FMath::FInterpTo(TrCurrentRawFrame.Length, TrNextRawFrame.Length, TrNextRawFrame.BezierDistance.Evaluate(TfInterpTime), 1.0f);
 
-                const FVector TfvRotationInperp = FMath::VInterpTo(TrCurrentRawFrame.Rotate, TrNextRawFrame.Rotate, TrCurrentRawFrame.BezierRotation.Evaluate(TfInterpTime), 1.0f);
+                const FVector TfvRotationInperp = FMath::VInterpTo(TrCurrentRawFrame.Rotate, TrNextRawFrame.Rotate, TrNextRawFrame.BezierRotation.Evaluate(TfInterpTime), 1.0f);
 
                 /** calculate data */
                 const FFrameNumber TsCurFrame = FFrameRate::TransformTime(FFrameNumber((int32)IterFrameCreateIdx), DisplayRate, TickResolution).GetFrame();

@@ -23,8 +23,8 @@ FVmdBezier::FVmdBezier()
 
 FVmdBezier::FVmdBezier(uint8 x0, uint8 y0, uint8 x1, uint8 y1)
 {
-    Point1 = FVector2D((float)x0 / 127.0f, (float)y0 / 127.0f);
-    Point2 = FVector2D((float)x1 / 127.0f, (float)y1 / 127.0f);
+    Point1 = FVector2D((float)x0 / 127.0f, (float)x1 / 127.0f);
+    Point2 = FVector2D((float)y0 / 127.0f, (float)y1 / 127.0f);
 }
 
 
