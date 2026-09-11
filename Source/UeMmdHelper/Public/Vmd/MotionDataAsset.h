@@ -189,6 +189,14 @@ protected:
     UPROPERTY(EditAnywhere, Category="Default")
     FFilePath MotionPath;
 
+    /**
+     * Read model animation into asset.
+     * It's default disabled, as we currently do not use model animation.
+     * Sometimes a lot of bone animation data will stuck engine for a long time.
+     */
+    UPROPERTY(EditAnywhere, Category = "Default")
+    bool bReadModelAnimation = false;
+
     UPROPERTY(VisibleAnywhere, Category="Default")
     FString TargetModelName;
 

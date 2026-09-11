@@ -234,6 +234,7 @@ void UMotionDataAsset::LoadFromVmdFile()
     
     SlowTask.EnterProgressFrame(1.0f, LOCTEXT("BoneTracks", "Converting bone tracks"));
     BoneTracks.Empty(0);
+    if (bReadModelAnimation)
     {
         for (const FVmdBoneFrame& IterRawFrame : TsVmdTracks.BoneFrames)
         {
