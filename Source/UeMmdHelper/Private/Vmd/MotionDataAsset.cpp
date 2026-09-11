@@ -729,6 +729,7 @@ void UMotionDataAsset::PushMorphDataToLevelSequencer()
 
     /** Cache handled raw data key */
     TSet<FString> RawDataHandledKeys;
+    TSet<FString> RawDataKeyItered;
 
     UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) === Total count:%d ==="), VmdControlRigMorphConfig.MorphMapConfigs.Num());
     for (const FVmdControlRigMorphPair& IterPair: VmdControlRigMorphConfig.MorphMapConfigs)
@@ -745,6 +746,7 @@ void UMotionDataAsset::PushMorphDataToLevelSequencer()
             continue;
         }
         const FString& TstrRawName = *TpRawName;
+        RawDataKeyItered.Add(TstrRawName);
 
         /** 
          * Check data exist
@@ -760,22 +762,25 @@ void UMotionDataAsset::PushMorphDataToLevelSequencer()
             continue;
         }
 
+        /** Check if control exist on rig  */
+        FRigControlElement* ControlElement = TpControlRig->FindControl(IterPair.ControlName);
+        if (!ControlElement)
+        {
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Control not on rig, name=%s cr=%s"),
+                *IterPair.ControlName.ToString(),
+                *GetFullNameSafe(TpControlRig)
+            );
+            continue;
+        }
+
         /** Find channel info */
         FChannelMapInfo* pChannelIndex = CRSection->ControlChannelMap.Find(IterPair.ControlName);
         if (pChannelIndex == nullptr)
         {
-            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Bad control, name=%s"), *IterPair.ControlName.ToString());
+            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Bad control channel, name=%s"), *IterPair.ControlName.ToString());
             continue;
         }
-
-        /** Check if control exist on rig  */
-        int32 ChannelIndex = pChannelIndex->ChannelIndex;
-        FRigControlElement* ControlElement = TpControlRig->FindControl(IterPair.ControlName);
-        if (!ControlElement)
-        {
-            UE_LOG(LogMmdHelper, Warning, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer:(Push) Control not on rig, name=%s"), *IterPair.ControlName.ToString());
-            continue;
-        }
+        const int32 ChannelIndex = pChannelIndex->ChannelIndex;
 
         /** Check if rig type matches */
         if (ControlElement->Settings.ControlType != ERigControlType::Float)
@@ -831,6 +836,12 @@ void UMotionDataAsset::PushMorphDataToLevelSequencer()
         if (!MorphMapConfigs.Contains(IterRawKey))
         {
             UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s, not in MorphMapConfigs"), *IterRawKey);
+            continue;
+        }
+
+        if (!RawDataKeyItered.Contains(IterRawKey))
+        {
+            UE_LOG(LogMmdHelper, Log, TEXT("UMotionDataAsset::PushMorphDataToLevelSequencer: > %s, not in VmdControlRigMorphConfig.MorphMapConfigs, click `GenerateControlRigConfig` and copy it to control rig."), *IterRawKey);
             continue;
         }
 
