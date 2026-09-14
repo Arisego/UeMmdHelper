@@ -28,6 +28,7 @@
 
 static const FName CameraFovName = TEXT("FieldOfView");
 static const FName ProjectionModeName = TEXT("ProjectionMode");
+static const FName CurrentFocalLengthName = TEXT("CurrentFocalLength");
 
 
 
@@ -544,6 +545,17 @@ void AVmdCineCamera::SyncCameraMotion_Interped()
         {
             FovTrack->RemoveAllAnimationData();
         }
+
+        /** 
+         * CurrentFocalLength is conflicted with field of view, they control the same logic
+         * If some kind of auto key is enable in Editor, this track might be created automatically while camera track created and make camera focal length behavior unpredictable.
+         */
+        UMovieSceneFloatTrack* FocalLengthTrack = TpMovieScene->FindTrack<UMovieSceneFloatTrack>(CameraGuid, CurrentFocalLengthName);
+        if (FocalLengthTrack)
+        {
+            TpMovieScene->RemoveTrack(*FocalLengthTrack);
+        }
+
 
         FovTrack->SetPropertyNameAndPath(CameraFovName, CameraFovName.ToString());
         UMovieSceneFloatSection* FovSection = Cast<UMovieSceneFloatSection>(FovTrack->CreateNewSection());
