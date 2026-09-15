@@ -27,10 +27,10 @@ private:
 
 public:
     UPROPERTY(EditAnywhere)
-    FVector2D Point1;
+    FVector2D Point1 = FVector2D(0.0f, 0.0f);
 
     UPROPERTY(EditAnywhere)
-    FVector2D Point2;
+    FVector2D Point2 = FVector2D(0.0f, 0.0f);
 };
 
 
@@ -41,22 +41,22 @@ struct FVmdCameraFrameData
 
 public:
     UPROPERTY(EditAnywhere)
-    uint32	Frame;
+    uint32	Frame = 0;
 
     UPROPERTY(EditAnywhere)
-    float Length;
+    float Length = 0.0f;
 
     UPROPERTY(EditAnywhere)
-    FVector	Location;
+    FVector	Location = FVector::ZeroVector;
 
     UPROPERTY(EditAnywhere)
-    FVector Rotate;
+    FVector Rotate = FVector::ZeroVector;
 
     UPROPERTY(EditAnywhere)
-    uint32 ViewingAngle;
+    uint32 ViewingAngle = 0;
 
     UPROPERTY(EditAnywhere)
-    uint8 Perspective;
+    uint8 Perspective = 0;
 
     UPROPERTY(EditAnywhere)
     FVmdBezier BezierLocation_X;
@@ -84,10 +84,10 @@ struct FVmdMorphFrameData
 
 public:
     UPROPERTY(EditAnywhere)
-    uint32	Frame;
+    uint32	Frame = 0;
 
     UPROPERTY(EditAnywhere)
-    float	Factor;
+    float	Factor = 0.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -107,13 +107,13 @@ struct FVmdBoneFrameData
 
 public:
     UPROPERTY(EditAnywhere)
-    uint32	Frame;
+    uint32	Frame = 0;
 
     UPROPERTY(EditAnywhere)
-    FVector	BoneLocation;
+    FVector	BoneLocation = FVector::ZeroVector;
 
     UPROPERTY(EditAnywhere)
-    FQuat BoneRotation;
+    FQuat BoneRotation = FQuat(0.0f, 0.0f, 0.0f, 0.0f);
 
     //uint8 Bezier[2][2][4];
 };
